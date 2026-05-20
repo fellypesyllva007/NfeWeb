@@ -1,0 +1,31 @@
+[Unit]
+Description=NfeWeb API / Fiscal Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/NfeWeb
+EnvironmentFile=/etc/nfeweb/nfeweb-api.env
+
+# Ajustar o comando quando o backend real estiver definido.
+# Exemplos possíveis:
+#   ExecStart=/usr/bin/node dist/server.js
+#   ExecStart=/usr/bin/python3 -m nfeweb_api
+#   ExecStart=/home/ubuntu/NfeWeb/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 3333
+ExecStart=/usr/bin/env bash -lc 'echo "Configure ExecStart para o backend real"; sleep infinity'
+
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=false
+
+[Install]
+WantedBy=multi-user.target
