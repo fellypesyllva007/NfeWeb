@@ -144,7 +144,7 @@ NFE_Validar retornou -10 com TDFeSSLXmlSignClass para a combinação testada.
 
 Isso não bloqueou a validação de regras de negócio.
 
-### 6. Assinatura XML com certificado A1/PFX autoassinado
+### 6. Assinatura XML com certificado A1/PFX autoassinado sem senha
 
 Status: aprovado.
 
@@ -163,8 +163,6 @@ SSLCryptLib = OpenSSL
 SSLHttpLib = OpenSSL
 SSLXmlSignLib = LibXml2
 ```
-
-Também foi necessário usar um PFX sem senha para o certificado de teste autoassinado.
 
 Certificado de teste compatível com o CNPJ do INI de exemplo:
 
@@ -189,6 +187,87 @@ XML assinado salvo: /tmp/acbrlib-nfe-arm64-.../nfe-assinada.xml
 NFE_Finalizar: ret=0
 ```
 
+### 7. Assinatura XML com certificado A1/PFX autoassinado com senha
+
+Status: aprovado.
+
+Condição necessária no Ubuntu 22.04 com OpenSSL 3:
+
+```text
+carregar providers default e legacy antes de carregar a ACBrLibNFe
+```
+
+Ambiente usado:
+
+```bash
+export OPENSSL_CONF="/tmp/acbr-arm64-openssl.cnf"
+export OPENSSL_MODULES="/usr/lib/aarch64-linux-gnu/ossl-modules"
+```
+
+Conteúdo usado em `/tmp/acbr-arm64-openssl.cnf`:
+
+```ini
+openssl_conf = openssl_init
+
+[openssl_init]
+providers = provider_sect
+alg_section = algorithm_sect
+
+[provider_sect]
+default = default_sect
+legacy = legacy_sect
+
+[default_sect]
+activate = 1
+
+[legacy_sect]
+activate = 1
+
+[algorithm_sect]
+default_properties =
+```
+
+Além disso, a senha foi aplicada seguindo o padrão dos exemplos oficiais da ACBrLib, ou seja, após `NFE_Inicializar`, usando `NFE_ConfigGravarValor`:
+
+```text
+NFE_ConfigGravarValor("DFe", "ArquivoPFX", caminho_do_pfx)
+NFE_ConfigGravarValor("DFe", "Senha", senha_do_pfx)
+```
+
+PFX testado:
+
+```text
+/home/ubuntu/certificados/nfe-teste-acbr-sample-1234.pfx
+```
+
+Senha testada:
+
+```text
+1234
+```
+
+Resultado observado:
+
+```text
+ConfigGravarValor DFe.Senha: ret=0; valor=<len=4>
+Config efetiva DFe.Senha: ret=0; tamanho=4; valor=<len=4>
+NFE_Assinar: ret=0
+NFE_VerificarAssinatura: ret=0
+NFE_ObterXml assinado: ret=0
+contem_signature=True
+XML assinado salvo: /tmp/acbrlib-nfe-arm64-configvalor-.../nfe-assinada-via-configgravarvalor.xml
+NFE_Finalizar: ret=0
+```
+
+Observação importante:
+
+```text
+Rodar o teste com PFX protegido por senha sem carregar os providers do OpenSSL 3 antes da ACBrLibNFe pode retornar:
+error:0308010C:digital envelope routines::unsupported
+```
+
+Com os providers carregados e senha aplicada via `NFE_ConfigGravarValor`, o PFX com senha assinou corretamente.
+
 ## Conclusão técnica
 
 A ACBrLibNFe funciona em Linux ARM64 no Oracle Cloud Ampere para as etapas locais essenciais:
@@ -202,7 +281,8 @@ geração de chave NF-e
 carga de NF-e por INI
 geração de XML
 validação de regras de negócio
-assinatura XML com certificado A1/PFX
+assinatura XML com certificado A1/PFX sem senha
+assinatura XML com certificado A1/PFX com senha
 verificação de assinatura
 ```
 
@@ -233,4 +313,13 @@ NfeWeb API
   -> fiscal-service
   -> libacbrnfe_arm64.so
   -> SEFAZ homologação/produção
+```
+
+Recomendação operacional para o `fiscal-service`:
+
+```text
+1. Exportar OPENSSL_CONF e OPENSSL_MODULES antes de carregar a libacbrnfe_arm64.so.
+2. Inicializar a ACBrLibNFe com INI base.
+3. Aplicar ArquivoPFX e Senha por NFE_ConfigGravarValor em tempo de execução.
+4. Não versionar senha ou PFX no repositório.
 ```
