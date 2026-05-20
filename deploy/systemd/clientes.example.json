@@ -1,0 +1,16 @@
+{
+  "clientes": [
+    {
+      "cliente_id": "lab-acbr-sample",
+      "razao_social": "RAZAO SOCIAL - LAB ACBr",
+      "cnpj": "92390477000149",
+      "uf": "SP",
+      "ambiente": "1",
+      "serie_nfe": 1,
+      "proximo_numero_nfe": 1,
+      "pfx_path": "/home/ubuntu/certificados/nfe-teste-acbr-sample-1234.pfx",
+      "pfx_password": "1234",
+      "ativo": true
+    }
+  ]
+}
