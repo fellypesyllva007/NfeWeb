@@ -6,6 +6,8 @@ Marcos implementados:
   - GET /health
   - GET /acbr/info
   - GET /clientes
+  - GET /db/status
+  - GET /db/emitentes
   - POST /nfe/gerar-chave
   - POST /nfe/carregar-ini
   - POST /nfe/assinar
@@ -23,12 +25,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable
 
 from client_registry import ClientRegistry, ClientRegistryError
+from database import db_status, list_emitters
 from fiscal_gateway import FiscalGateway, FiscalGatewayError
 from nfe_offline import NFeOffline, NFeOfflineError
 
 
 SERVICE_NAME = "nfeweb-api"
-SERVICE_VERSION = "0.6.0"
+SERVICE_VERSION = "0.7.0"
 
 
 def env(name: str, default: str) -> str:
@@ -93,6 +96,20 @@ def get_clientes() -> tuple[int, dict[str, Any]]:
         return 500, {"status": "error", "service": SERVICE_NAME, "error": type(exc).__name__, "message": str(exc)}
 
 
+def get_db_status() -> tuple[int, dict[str, Any]]:
+    try:
+        return 200, {"status": "ok", "service": SERVICE_NAME, "database": db_status()}
+    except Exception as exc:  # noqa: BLE001
+        return 500, {"status": "error", "service": SERVICE_NAME, "error": type(exc).__name__, "message": str(exc)}
+
+
+def get_db_emitentes() -> tuple[int, dict[str, Any]]:
+    try:
+        return 200, {"status": "ok", "service": SERVICE_NAME, "emitentes": list_emitters()}
+    except Exception as exc:  # noqa: BLE001
+        return 500, {"status": "error", "service": SERVICE_NAME, "error": type(exc).__name__, "message": str(exc)}
+
+
 def post_gerar_chave(payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
     try:
         resultado = FiscalGateway().gerar_chave(payload)
@@ -114,7 +131,7 @@ def post_nfe_offline(payload: dict[str, Any], operacao: str, fn: Callable[[NFeOf
 
 
 class NfeWebHandler(BaseHTTPRequestHandler):
-    server_version = "NfeWebAPI/0.6"
+    server_version = "NfeWebAPI/0.7"
 
     def do_GET(self) -> None:  # noqa: N802
         if self.path in ("/health", "/api/health"):
@@ -131,6 +148,16 @@ class NfeWebHandler(BaseHTTPRequestHandler):
             json_response(self, status, payload)
             return
 
+        if self.path in ("/db/status", "/api/db/status"):
+            status, payload = get_db_status()
+            json_response(self, status, payload)
+            return
+
+        if self.path in ("/db/emitentes", "/api/db/emitentes"):
+            status, payload = get_db_emitentes()
+            json_response(self, status, payload)
+            return
+
         if self.path in ("/", "/api", "/api/"):
             json_response(
                 self,
@@ -142,6 +169,8 @@ class NfeWebHandler(BaseHTTPRequestHandler):
                     "health": "/health",
                     "acbr_info": "/acbr/info",
                     "clientes": "/clientes",
+                    "db_status": "/db/status",
+                    "db_emitentes": "/db/emitentes",
                     "nfe_gerar_chave": "/nfe/gerar-chave",
                     "nfe_carregar_ini": "/nfe/carregar-ini",
                     "nfe_assinar": "/nfe/assinar",
