@@ -64,7 +64,7 @@ Funções testadas com sucesso:
 
 Ponto mais importante:
 
-A ACBrLibNFe ARM64 conseguiu carregar uma NF-e por INI, gerar XML, carregar certificado A1/PFX autoassinado de teste, assinar o XML e verificar a assinatura com sucesso.
+A ACBrLibNFe ARM64 conseguiu carregar uma NF-e por INI, gerar XML, carregar certificado A1/PFX autoassinado de teste com senha, assinar o XML e verificar a assinatura com sucesso.
 
 Resultado observado:
 
@@ -79,10 +79,21 @@ SSLCryptLib=1
 SSLHttpLib=3
 SSLXmlSignLib=4
 
+Para PFX protegido por senha no Ubuntu 22.04/OpenSSL 3, também foi necessário carregar os providers do OpenSSL antes da ACBrLib:
+
+OPENSSL_CONF=/tmp/acbr-arm64-openssl.cnf
+OPENSSL_MODULES=/usr/lib/aarch64-linux-gnu/ossl-modules
+
+E aplicar ArquivoPFX e Senha em tempo de execução por NFE_ConfigGravarValor, seguindo o padrão dos exemplos oficiais:
+
+NFE_ConfigGravarValor("DFe", "ArquivoPFX", caminho_do_pfx)
+NFE_ConfigGravarValor("DFe", "Senha", senha_do_pfx)
+
 Observações importantes:
 
 - O teste de assinatura foi feito com certificado autoassinado apenas para validar assinatura local. Não é certificado ICP-Brasil e não serve para autorização na SEFAZ.
-- PFX com senha apresentou problemas de MAC/PKCS#12 no OpenSSL 3 nesse ambiente. PFX sem senha funcionou no teste local.
+- PFX com senha funcionou quando os providers do OpenSSL 3 foram carregados e a senha foi aplicada via NFE_ConfigGravarValor.
+- Sem providers do OpenSSL 3, o erro observado foi: error:0308010C:digital envelope routines::unsupported.
 - Ainda não testamos envio para SEFAZ, StatusServico, autorização, cancelamento, inutilização nem DANFE em PDF.
 
 Repositório com o lab reproduzível:
@@ -99,7 +110,7 @@ Perguntas para a equipe/comunidade:
 
 1. Existe interesse em incluir um build mode Linux-aarch64-MT na ACBrLibNFe?
 2. Qual seria o melhor caminho para enviar patch ou diff do .lpi?
-3. Há alguma recomendação específica para lidar com PKCS#12/OpenSSL 3 no Linux ARM64?
+3. Há alguma recomendação oficial adicional para OpenSSL 3/providers em Linux?
 4. Qual canal oficial preferem para seguir com a contribuição: fórum, SVN patch, issue, pull request no espelho GitHub ou outro caminho?
 
 Obrigado!
@@ -135,9 +146,11 @@ NFE_Versao: 1.5.0.455
 OpenSSL 3.0.2 15 Mar 2022
 ```
 
-### Assinatura local
+### Assinatura local com PFX protegido por senha
 
 ```text
+ConfigGravarValor DFe.Senha: ret=0; valor=<len=4>
+Config efetiva DFe.Senha: ret=0; tamanho=4; valor=<len=4>
 NFE_Assinar: ret=0
 NFE_VerificarAssinatura: ret=0
 NFE_ObterXml assinado: ret=0
@@ -152,4 +165,4 @@ contem_signature=True
 4. Gerar patch mínimo para adicionar build mode Linux-aarch64-MT.
 5. Testar StatusServico com certificado A1 real em homologação.
 6. Testar envio/autorização em homologação.
-7. Documentar limitações do OpenSSL 3 com PFX protegido por senha.
+7. Documentar recomendação de providers OpenSSL 3 para Linux ARM64.
