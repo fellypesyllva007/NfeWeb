@@ -8,8 +8,8 @@ Usa o arquivo de teste do próprio ACBr quando disponível:
 Valida:
   - NFE_Inicializar
   - NFE_CarregarINI
-  - NFE_ObterXml
-  - NFE_GravarXml
+  - NFE_ObterXml(index=0)
+  - NFE_GravarXml(index=0)
   - NFE_LimparLista
   - NFE_Finalizar
 
@@ -167,28 +167,28 @@ def main() -> int:
         if ret_load != 0:
             return ret_load
 
-        success = False
-        for index in (0, 1):
-            ret_xml, xml, xml_size = obter_xml(lib, handle, index)
-            print(f"NFE_ObterXml(index={index}): ret={ret_xml}; tamanho={xml_size}; xml_prefix={xml[:120]!r}")
-            if ret_xml == 0 and xml.strip():
-                out_xml = workdir / f"nfe-index-{index}.xml"
-                out_xml.write_text(xml, encoding="utf-8")
-                print(f"XML salvo via buffer: {out_xml}")
+        ret_xml, xml, xml_size = obter_xml(lib, handle, 0)
+        print(f"NFE_ObterXml(index=0): ret={ret_xml}; tamanho={xml_size}; xml_prefix={xml[:120]!r}")
+        if ret_xml != 0 or not xml.strip():
+            print("UltimoRetorno final:", ultimo_retorno(lib, handle))
+            return ret_xml or 2
 
-                ret_gravar = lib.NFE_GravarXml(
-                    handle,
-                    index,
-                    f"nfe-index-{index}-gravado.xml".encode("utf-8"),
-                    str(workdir).encode("utf-8"),
-                )
-                print(f"NFE_GravarXml(index={index}): ret={ret_gravar}")
-                success = True
+        out_xml = workdir / "nfe-index-0.xml"
+        out_xml.write_text(xml, encoding="utf-8")
+        print(f"XML salvo via buffer: {out_xml}")
+
+        ret_gravar = lib.NFE_GravarXml(
+            handle,
+            0,
+            b"nfe-index-0-gravado.xml",
+            str(workdir).encode("utf-8"),
+        )
+        print(f"NFE_GravarXml(index=0): ret={ret_gravar}")
 
         print("UltimoRetorno final:", ultimo_retorno(lib, handle))
         ret_limpar = lib.NFE_LimparLista(handle)
         print(f"NFE_LimparLista: ret={ret_limpar}")
-        return 0 if success else 2
+        return 0
     finally:
         ret_finalizar = lib.NFE_Finalizar(handle)
         print(f"NFE_Finalizar: ret={ret_finalizar}")
