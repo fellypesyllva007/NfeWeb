@@ -6,8 +6,12 @@ Requer variáveis de ambiente:
   NFE_PFX_PATH=/caminho/certificado.pfx
   NFE_PFX_PASSWORD='senha-do-pfx'
 
+A senha pode ser vazia para testar PFX sem senha:
+  export NFE_PFX_PASSWORD=""
+
 Valida:
   - NFE_Inicializar
+  - leitura efetiva das configs DFe
   - NFE_CarregarINI
   - NFE_Assinar
   - NFE_VerificarAssinatura
@@ -33,9 +37,11 @@ def acbr_home() -> Path:
     return Path(value).expanduser().resolve()
 
 
-def required_env(name: str) -> str:
-    value = os.environ.get(name)
-    if not value:
+def required_env(name: str, allow_empty: bool = False) -> str:
+    if name not in os.environ:
+        raise SystemExit(f"ERRO: defina a variável de ambiente {name}")
+    value = os.environ.get(name, "")
+    if not allow_empty and not value:
         raise SystemExit(f"ERRO: defina a variável de ambiente {name}")
     return value
 
@@ -101,6 +107,7 @@ def write_acbrlib_ini(base: Path, pfx_path: Path, pfx_password: str) -> tuple[Pa
                 f"PathSchemas={schemas}",
                 f"ArquivoPFX={pfx_path}",
                 f"Senha={pfx_password}",
+                "VerificarValidade=0",
                 "",
             ]
         ),
@@ -157,11 +164,20 @@ def ultimo_retorno(lib, handle: ctypes.c_void_p) -> str:
     return f"ret={ret}; tamanho={size}; mensagem={msg}"
 
 
-def ler_config(lib, handle: ctypes.c_void_p, chave: str) -> str:
+def ler_config_valor(lib, handle: ctypes.c_void_p, chave: str) -> tuple[int, str]:
     buffer = ctypes.create_string_buffer(4096)
     size = ctypes.c_int(4096)
     ret = lib.NFE_ConfigLerValor(handle, b"DFe", chave.encode("utf-8"), buffer, ctypes.byref(size))
-    return f"{chave}=ret:{ret}; valor:{decode_buffer(buffer)}"
+    return ret, decode_buffer(buffer)
+
+
+def print_config(lib, handle: ctypes.c_void_p, chave: str, mask: bool = False) -> None:
+    ret, valor = ler_config_valor(lib, handle, chave)
+    if mask:
+        shown = f"<len={len(valor)}>" if valor else "<vazio>"
+    else:
+        shown = valor
+    print(f"Config efetiva: {chave}=ret:{ret}; valor:{shown}")
 
 
 def obter_xml(lib, handle: ctypes.c_void_p) -> tuple[int, str, int]:
@@ -174,7 +190,7 @@ def obter_xml(lib, handle: ctypes.c_void_p) -> tuple[int, str, int]:
 def main() -> int:
     base = acbr_home()
     pfx_path = Path(required_env("NFE_PFX_PATH")).expanduser().resolve()
-    pfx_password = required_env("NFE_PFX_PASSWORD")
+    pfx_password = required_env("NFE_PFX_PASSWORD", allow_empty=True)
 
     if not pfx_path.exists():
         raise SystemExit(f"ERRO: certificado PFX não encontrado: {pfx_path}")
@@ -188,6 +204,7 @@ def main() -> int:
     print(f"INI NF-e: {sample_ini}")
     print(f"Certificado PFX: {pfx_path}")
     print("SSLCryptLib=1 (OpenSSL), SSLHttpLib=3 (OpenSSL), SSLXmlSignLib=4 (LibXml2)")
+    print(f"Senha informada: <len={len(pfx_password)}>")
     print(f"Saída: {workdir}")
 
     lib = ctypes.CDLL(str(lib_path))
@@ -201,9 +218,15 @@ def main() -> int:
         return ret
 
     try:
-        print("Config efetiva:", ler_config(lib, handle, "SSLCryptLib"))
-        print("Config efetiva:", ler_config(lib, handle, "SSLHttpLib"))
-        print("Config efetiva:", ler_config(lib, handle, "SSLXmlSignLib"))
+        for key in [
+            "SSLCryptLib",
+            "SSLHttpLib",
+            "SSLXmlSignLib",
+            "ArquivoPFX",
+            "Senha",
+            "VerificarValidade",
+        ]:
+            print_config(lib, handle, key, mask=(key == "Senha"))
 
         ret_load = lib.NFE_CarregarINI(handle, str(sample_ini).encode("utf-8"))
         print(f"NFE_CarregarINI: ret={ret_load}")
