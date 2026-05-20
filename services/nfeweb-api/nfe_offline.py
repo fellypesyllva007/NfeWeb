@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 from typing import Any, Callable
 
-from client_registry import ClientRegistry
+from database import DatabaseError, get_emitter_context, public_emitter_context
 
 
 class NFeOfflineError(RuntimeError):
@@ -31,24 +31,31 @@ class NFeOffline:
         self.log_path = env("NFE_LOG_PATH", "/var/log/nfeweb")
         self.path_salvar = env("NFE_PATH_SALVAR", "/var/lib/nfeweb/notas")
         self.path_schemas = env("NFE_PATH_SCHEMAS")
-        self.uf = env("NFE_UF", "SP")
-        self.ambiente = env("NFE_AMBIENTE", "1")
-        self.cert_path = env("NFE_PFX_PATH")
-        self.cert_password = env("NFE_PFX_PASSWORD")
-        self.cliente: dict[str, Any] | None = None
+        self.uf = ""
+        self.ambiente = ""
+        self.cert_path = ""
+        self.cert_password = ""
+        self.emitter_context: dict[str, Any] | None = None
 
-    def apply_cliente(self, payload: dict[str, Any]) -> dict[str, Any] | None:
-        cliente_id = str(payload.get("cliente_id") or "").strip()
-        if not cliente_id:
-            return None
+    def apply_emitter(self, payload: dict[str, Any]) -> dict[str, Any]:
+        emitter_id = str(payload.get("emitter_id") or "").strip()
+        modelo = str(payload.get("modelo") or "55").strip()
+        if not emitter_id:
+            raise NFeOfflineError("emitter_id é obrigatório")
 
-        cliente = ClientRegistry().get(cliente_id)
-        self.cliente = cliente
-        self.uf = str(cliente.get("uf") or self.uf)
-        self.ambiente = str(cliente.get("ambiente") or self.ambiente)
-        self.cert_path = str(cliente.get("pfx_path") or self.cert_path)
-        self.cert_password = str(cliente.get("pfx_password") or self.cert_password)
-        return ClientRegistry.public_view(cliente)
+        try:
+            ctx = get_emitter_context(emitter_id, modelo)
+        except DatabaseError as exc:
+            raise NFeOfflineError(str(exc)) from exc
+
+        self.emitter_context = ctx
+        self.uf = str(ctx.get("config_uf") or ctx.get("emitter_uf") or "")
+        self.ambiente = str(ctx.get("config_ambiente") or ctx.get("emitter_ambiente") or "")
+        self.path_schemas = str(ctx.get("path_schemas") or self.path_schemas or "")
+        self.path_salvar = str(ctx.get("path_salvar") or self.path_salvar or "/var/lib/nfeweb/notas")
+        self.cert_path = str(ctx.get("pfx_path") or "")
+        self.cert_password = str(ctx.get("pfx_password") or "")
+        return public_emitter_context(ctx)
 
     def sample_ini(self) -> Path:
         if not self.acbr_home:
@@ -199,7 +206,7 @@ class NFeOffline:
         return {"ret": ret, "ultimo_retorno": ultimo}
 
     def executar_carregar_ini(self, payload: dict[str, Any]) -> dict[str, Any]:
-        cliente = self.apply_cliente(payload)
+        emitente = self.apply_emitter(payload)
         ini_path = self.resolve_ini(payload)
         include_xml = bool(payload.get("include_xml", True))
         index = int(payload.get("index", 0))
@@ -214,13 +221,13 @@ class NFeOffline:
             limpar = self.limpar(lib, handle)
             if not include_xml:
                 xml.pop("xml", None)
-            return {"cliente": cliente, "ini_path": str(ini_path), "config_path": str(config_path), "carregar_ini": carregar, "obter_xml": xml, "limpar_lista": limpar}
+            return {"emitente": emitente, "ini_path": str(ini_path), "config_path": str(config_path), "carregar_ini": carregar, "obter_xml": xml, "limpar_lista": limpar}
         finally:
             if lib is not None and handle.value:
                 lib.NFE_Finalizar(handle)
 
     def executar_assinar(self, payload: dict[str, Any]) -> dict[str, Any]:
-        cliente = self.apply_cliente(payload)
+        emitente = self.apply_emitter(payload)
         ini_path = self.resolve_ini(payload)
         include_xml = bool(payload.get("include_xml", True))
         index = int(payload.get("index", 0))
@@ -249,13 +256,13 @@ class NFeOffline:
             limpar = self.limpar(lib, handle)
             if not include_xml:
                 xml.pop("xml", None)
-            return {"cliente": cliente, "ini_path": str(ini_path), "config_path": str(config_path), "certificado": {"pfx_path": str(pfx), "senha_len": len(self.cert_password)}, "carregar_ini": carregar, "assinar": {"ret": ret_assinar, "ultimo_retorno": ultimo_assinar}, "verificar_assinatura": {"ret": ret_ver, "mensagem": msg_ver, "tamanho": size_ver}, "obter_xml": xml, "limpar_lista": limpar}
+            return {"emitente": emitente, "ini_path": str(ini_path), "config_path": str(config_path), "certificado": {"pfx_path": str(pfx), "senha_len": len(self.cert_password)}, "carregar_ini": carregar, "assinar": {"ret": ret_assinar, "ultimo_retorno": ultimo_assinar}, "verificar_assinatura": {"ret": ret_ver, "mensagem": msg_ver, "tamanho": size_ver}, "obter_xml": xml, "limpar_lista": limpar}
         finally:
             if lib is not None and handle.value:
                 lib.NFE_Finalizar(handle)
 
     def executar_validar_regras(self, payload: dict[str, Any]) -> dict[str, Any]:
-        cliente = self.apply_cliente(payload)
+        emitente = self.apply_emitter(payload)
         ini_path = self.resolve_ini(payload)
         handle = ctypes.c_void_p(None)
         lib = None
@@ -266,7 +273,7 @@ class NFeOffline:
             carregar = self.carregar_ini(lib, handle, ini_path)
             ret, mensagem, tamanho = self.text_call(lib.NFE_ValidarRegrasdeNegocios, handle, 65536)
             limpar = self.limpar(lib, handle)
-            return {"cliente": cliente, "ini_path": str(ini_path), "config_path": str(config_path), "carregar_ini": carregar, "validar_regras": {"ret": ret, "mensagem": mensagem, "tamanho": tamanho}, "limpar_lista": limpar}
+            return {"emitente": emitente, "ini_path": str(ini_path), "config_path": str(config_path), "carregar_ini": carregar, "validar_regras": {"ret": ret, "mensagem": mensagem, "tamanho": tamanho}, "limpar_lista": limpar}
         finally:
             if lib is not None and handle.value:
                 lib.NFE_Finalizar(handle)
