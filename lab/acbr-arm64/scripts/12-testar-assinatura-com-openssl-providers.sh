@@ -3,9 +3,9 @@ set -euo pipefail
 
 cd "$(dirname "$0")/../../.."
 
-export ACBR_HOME="${ACBR_HOME:-$HOME/acbr-arm64-lab/ACBr}"
-export NFE_PFX_PASSWORD="${NFE_PFX_PASSWORD:-123456}"
-export NFE_PFX_PATH="${NFE_PFX_PATH:-$HOME/certificados/nfe-teste-autoassinado-openssl3.pfx}"
+export ACBR_HOME="${ACBR_HOME-$HOME/acbr-arm64-lab/ACBr}"
+export NFE_PFX_PASSWORD="${NFE_PFX_PASSWORD-123456}"
+export NFE_PFX_PATH="${NFE_PFX_PATH-$HOME/certificados/nfe-teste-autoassinado-openssl3.pfx}"
 
 OPENSSL_MODULES_DIR="${OPENSSL_MODULES_DIR:-/usr/lib/aarch64-linux-gnu/ossl-modules}"
 OPENSSL_CONF_PATH="${OPENSSL_CONF_PATH:-/tmp/acbr-arm64-openssl.cnf}"
@@ -38,6 +38,7 @@ cat <<EOF
 == Ambiente OpenSSL para ACBrLibNFe ==
 ACBR_HOME=$ACBR_HOME
 NFE_PFX_PATH=$NFE_PFX_PATH
+NFE_PFX_PASSWORD_LEN=${#NFE_PFX_PASSWORD}
 OPENSSL_CONF=$OPENSSL_CONF
 OPENSSL_MODULES=$OPENSSL_MODULES
 
