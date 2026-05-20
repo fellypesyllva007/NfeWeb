@@ -8,6 +8,10 @@ fi
 
 PROJECT="$ACBR_HOME/Projetos/ACBrLib/Fontes/NFe/ACBrLibNFeConsoleMT.lpi"
 BUILD_MODE="Linux-aarch64-MT"
+LOG_DIR="${LOG_DIR:-$PWD/lab/acbr-arm64/logs}"
+LOG_FILE="$LOG_DIR/build-acbrlib-nfe-arm64-$(date +%Y%m%d-%H%M%S).log"
+
+mkdir -p "$LOG_DIR"
 
 if [[ ! -f "$PROJECT" ]]; then
   echo "ERRO: projeto nao encontrado: $PROJECT" >&2
@@ -31,7 +35,26 @@ python3 "$(dirname "$0")/03-add-linux-aarch64-buildmode.py"
 echo
 
 echo "== Compilando ACBrLibNFe para Linux ARM64 =="
-lazbuild --build-mode="$BUILD_MODE" "$PROJECT"
+echo "Log: $LOG_FILE"
+
+set +e
+lazbuild --build-mode="$BUILD_MODE" "$PROJECT" 2>&1 | tee "$LOG_FILE"
+BUILD_EXIT=${PIPESTATUS[0]}
+set -e
+
+echo
+
+echo "== Resumo do log =="
+grep -Ei "fatal:|error:|erro:|cannot find|can't find|undefined reference|ld:|Error:" "$LOG_FILE" || true
+
+echo
+
+echo "Exit code lazbuild: $BUILD_EXIT"
+
+if [[ "$BUILD_EXIT" -ne 0 ]]; then
+  echo "Build falhou. Veja o log completo: $LOG_FILE" >&2
+  exit "$BUILD_EXIT"
+fi
 
 OUT1="$ACBR_HOME/Projetos/ACBrLib/Fontes/NFe/bin/Linux/CONSOLE-MT/libacbrnfe_arm64.so"
 OUT2="$ACBR_HOME/Projetos/ACBrLib/Fontes/NFe/bin/Linux/CONSOLE-MT/libacbrnfe_arm64"
@@ -54,3 +77,7 @@ echo
 echo "Biblioteca gerada: $OUT"
 file "$OUT" || true
 ldd "$OUT" || true
+
+echo
+
+echo "Log completo: $LOG_FILE"
