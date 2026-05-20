@@ -287,10 +287,12 @@ class NFeOffline:
     def executar_status_servico(self, payload: dict[str, Any]) -> dict[str, Any]:
         emitente = self.apply_emitter(payload)
         ambiente_original = self.ambiente
-        self.ambiente = "2"  # StatusServico sempre em homologação neste endpoint.
+        self.ambiente = "1"  # ACBrLib: 0=producao, 1=homologacao. SEFAZ tpAmb equivalente: 2.
         emitente["ambiente_original_banco"] = ambiente_original
-        emitente["ambiente"] = "2"
-        emitente["ambiente_forcado"] = "homologacao"
+        emitente["ambiente_acbrlib"] = "1"
+        emitente["ambiente_nome"] = "homologacao"
+        emitente["tpAmb_sefaz_equivalente"] = "2"
+        emitente["ambiente"] = "1"
 
         handle = ctypes.c_void_p(None)
         lib = None
