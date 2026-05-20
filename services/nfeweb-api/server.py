@@ -5,6 +5,7 @@ NfeWeb API mínima.
 Marcos implementados:
   - GET /health
   - GET /acbr/info
+  - GET /clientes
   - POST /nfe/gerar-chave
   - POST /nfe/carregar-ini
   - POST /nfe/assinar
@@ -21,12 +22,13 @@ import platform
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable
 
+from client_registry import ClientRegistry, ClientRegistryError
 from fiscal_gateway import FiscalGateway, FiscalGatewayError
 from nfe_offline import NFeOffline, NFeOfflineError
 
 
 SERVICE_NAME = "nfeweb-api"
-SERVICE_VERSION = "0.5.0"
+SERVICE_VERSION = "0.6.0"
 
 
 def env(name: str, default: str) -> str:
@@ -81,6 +83,16 @@ def get_acbr_info() -> tuple[int, dict[str, Any]]:
         return 500, {"status": "error", "service": SERVICE_NAME, "error": type(exc).__name__, "message": str(exc)}
 
 
+def get_clientes() -> tuple[int, dict[str, Any]]:
+    try:
+        clientes = ClientRegistry().list_public()
+        return 200, {"status": "ok", "service": SERVICE_NAME, "clientes": clientes}
+    except ClientRegistryError as exc:
+        return 400, {"status": "error", "service": SERVICE_NAME, "error": "ClientRegistryError", "message": str(exc)}
+    except Exception as exc:  # noqa: BLE001
+        return 500, {"status": "error", "service": SERVICE_NAME, "error": type(exc).__name__, "message": str(exc)}
+
+
 def post_gerar_chave(payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
     try:
         resultado = FiscalGateway().gerar_chave(payload)
@@ -102,7 +114,7 @@ def post_nfe_offline(payload: dict[str, Any], operacao: str, fn: Callable[[NFeOf
 
 
 class NfeWebHandler(BaseHTTPRequestHandler):
-    server_version = "NfeWebAPI/0.5"
+    server_version = "NfeWebAPI/0.6"
 
     def do_GET(self) -> None:  # noqa: N802
         if self.path in ("/health", "/api/health"):
@@ -111,6 +123,11 @@ class NfeWebHandler(BaseHTTPRequestHandler):
 
         if self.path in ("/acbr/info", "/api/acbr/info"):
             status, payload = get_acbr_info()
+            json_response(self, status, payload)
+            return
+
+        if self.path in ("/clientes", "/api/clientes"):
+            status, payload = get_clientes()
             json_response(self, status, payload)
             return
 
@@ -124,6 +141,7 @@ class NfeWebHandler(BaseHTTPRequestHandler):
                     "message": "NfeWeb API ativa",
                     "health": "/health",
                     "acbr_info": "/acbr/info",
+                    "clientes": "/clientes",
                     "nfe_gerar_chave": "/nfe/gerar-chave",
                     "nfe_carregar_ini": "/nfe/carregar-ini",
                     "nfe_assinar": "/nfe/assinar",
