@@ -44,6 +44,10 @@ def new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:24]}"
 
 
+def row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    return {key: row[key] for key in row.keys()}
+
+
 def seed_lab(conn: sqlite3.Connection) -> dict[str, Any]:
     tenant_id = "tenant_lab"
     emitter_id = "emit_lab_acbr_sample"
@@ -154,3 +158,52 @@ def stats(conn: sqlite3.Connection) -> dict[str, int]:
         row = conn.execute(f"SELECT COUNT(*) AS total FROM {table}").fetchone()
         result[table] = int(row["total"])
     return result
+
+
+def db_status() -> dict[str, Any]:
+    path = db_path()
+    with connect(path) as conn:
+        migration = conn.execute(
+            "SELECT version, name, applied_at FROM schema_migrations ORDER BY version DESC LIMIT 1"
+        ).fetchone()
+        return {
+            "db_path": str(path),
+            "exists": path.exists(),
+            "size_bytes": path.stat().st_size if path.exists() else 0,
+            "latest_migration": row_to_dict(migration) if migration else None,
+            "stats": stats(conn),
+        }
+
+
+def list_emitters() -> list[dict[str, Any]]:
+    with connect(db_path()) as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                e.id,
+                e.tenant_id,
+                t.nome AS tenant_nome,
+                t.slug AS tenant_slug,
+                e.cnpj,
+                e.razao_social,
+                e.nome_fantasia,
+                e.uf,
+                e.ambiente,
+                e.status,
+                cfg.modelo,
+                cfg.serie,
+                seq.proximo_numero,
+                cert.pfx_path AS certificado_pfx_path,
+                cert.is_active AS certificado_ativo
+            FROM fiscal_emitters e
+            JOIN tenants t ON t.id = e.tenant_id
+            LEFT JOIN fiscal_configs cfg ON cfg.emitter_id = e.id AND cfg.is_active = 1
+            LEFT JOIN fiscal_sequences seq ON seq.emitter_id = e.id
+                AND seq.modelo = cfg.modelo
+                AND seq.serie = cfg.serie
+                AND seq.ambiente = cfg.ambiente
+            LEFT JOIN fiscal_certificates cert ON cert.emitter_id = e.id AND cert.is_active = 1
+            ORDER BY t.nome, e.razao_social
+            """
+        ).fetchall()
+        return [row_to_dict(row) for row in rows]
