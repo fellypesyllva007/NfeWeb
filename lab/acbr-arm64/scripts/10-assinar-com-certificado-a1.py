@@ -95,10 +95,9 @@ def write_acbrlib_ini(base: Path, pfx_path: Path, pfx_password: str) -> tuple[Pa
                 "",
                 "[DFe]",
                 "UF=SP",
-                "SSLLib=4",
-                "CryptLib=1",
-                "HttpLib=2",
-                "XmlSignLib=4",
+                "SSLCryptLib=1",
+                "SSLHttpLib=3",
+                "SSLXmlSignLib=4",
                 f"PathSchemas={schemas}",
                 f"ArquivoPFX={pfx_path}",
                 f"Senha={pfx_password}",
@@ -136,6 +135,9 @@ def configure(lib) -> None:
     lib.NFE_ObterXml.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_char_p, ctypes.POINTER(ctypes.c_int)]
     lib.NFE_ObterXml.restype = ctypes.c_int
 
+    lib.NFE_ConfigLerValor.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_int)]
+    lib.NFE_ConfigLerValor.restype = ctypes.c_int
+
     lib.NFE_LimparLista.argtypes = [ctypes.c_void_p]
     lib.NFE_LimparLista.restype = ctypes.c_int
 
@@ -153,6 +155,13 @@ def text_response(fn, handle: ctypes.c_void_p, size_value: int = 65536) -> tuple
 def ultimo_retorno(lib, handle: ctypes.c_void_p) -> str:
     ret, msg, size = text_response(lib.NFE_UltimoRetorno, handle)
     return f"ret={ret}; tamanho={size}; mensagem={msg}"
+
+
+def ler_config(lib, handle: ctypes.c_void_p, chave: str) -> str:
+    buffer = ctypes.create_string_buffer(4096)
+    size = ctypes.c_int(4096)
+    ret = lib.NFE_ConfigLerValor(handle, b"DFe", chave.encode("utf-8"), buffer, ctypes.byref(size))
+    return f"{chave}=ret:{ret}; valor:{decode_buffer(buffer)}"
 
 
 def obter_xml(lib, handle: ctypes.c_void_p) -> tuple[int, str, int]:
@@ -178,7 +187,7 @@ def main() -> int:
     print(f"Config ACBrLib: {config_ini}")
     print(f"INI NF-e: {sample_ini}")
     print(f"Certificado PFX: {pfx_path}")
-    print("CryptLib=1 (OpenSSL), XmlSignLib=4 (LibXml2)")
+    print("SSLCryptLib=1 (OpenSSL), SSLHttpLib=3 (OpenSSL), SSLXmlSignLib=4 (LibXml2)")
     print(f"Saída: {workdir}")
 
     lib = ctypes.CDLL(str(lib_path))
@@ -192,6 +201,10 @@ def main() -> int:
         return ret
 
     try:
+        print("Config efetiva:", ler_config(lib, handle, "SSLCryptLib"))
+        print("Config efetiva:", ler_config(lib, handle, "SSLHttpLib"))
+        print("Config efetiva:", ler_config(lib, handle, "SSLXmlSignLib"))
+
         ret_load = lib.NFE_CarregarINI(handle, str(sample_ini).encode("utf-8"))
         print(f"NFE_CarregarINI: ret={ret_load}")
         print("UltimoRetorno após CarregarINI:", ultimo_retorno(lib, handle))
