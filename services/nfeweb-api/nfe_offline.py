@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Operações NF-e offline da NfeWeb API usando ACBrLibNFe via ctypes."""
+"""Operações NF-e offline/online da NfeWeb API usando ACBrLibNFe via ctypes."""
 
 from __future__ import annotations
 
@@ -133,6 +133,8 @@ class NFeOffline:
         lib.NFE_VerificarAssinatura.restype = ctypes.c_int
         lib.NFE_ValidarRegrasdeNegocios.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_int)]
         lib.NFE_ValidarRegrasdeNegocios.restype = ctypes.c_int
+        lib.NFE_StatusServico.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_int)]
+        lib.NFE_StatusServico.restype = ctypes.c_int
         lib.NFE_LimparLista.argtypes = [ctypes.c_void_p]
         lib.NFE_LimparLista.restype = ctypes.c_int
 
@@ -176,6 +178,15 @@ class NFeOffline:
         if self.path_schemas:
             self.config(lib, handle, "DFe", "PathSchemas", self.path_schemas)
             self.config(lib, handle, "NFe", "PathSchemas", self.path_schemas)
+
+    def configurar_certificado(self, lib: ctypes.CDLL, handle: ctypes.c_void_p) -> dict[str, Any]:
+        pfx = Path(self.cert_path).expanduser().resolve()
+        if not pfx.exists():
+            raise NFeOfflineError(f"PFX não encontrado: {pfx}")
+        self.config(lib, handle, "DFe", "ArquivoPFX", str(pfx))
+        self.config(lib, handle, "DFe", "Senha", self.cert_password)
+        self.config(lib, handle, "DFe", "VerificarValidade", "0")
+        return {"pfx_path": str(pfx), "senha_len": len(self.cert_password)}
 
     def carregar_ini(self, lib: ctypes.CDLL, handle: ctypes.c_void_p, ini_path: Path) -> dict[str, Any]:
         ret = lib.NFE_CarregarINI(handle, str(ini_path).encode())
@@ -231,18 +242,13 @@ class NFeOffline:
         ini_path = self.resolve_ini(payload)
         include_xml = bool(payload.get("include_xml", True))
         index = int(payload.get("index", 0))
-        pfx = Path(self.cert_path).expanduser().resolve()
-        if not pfx.exists():
-            raise NFeOfflineError(f"PFX não encontrado: {pfx}")
         handle = ctypes.c_void_p(None)
         lib = None
         try:
             lib = self.load_lib()
             handle, config_path = self.inicializar(lib)
             self.config_padrao(lib, handle)
-            self.config(lib, handle, "DFe", "ArquivoPFX", str(pfx))
-            self.config(lib, handle, "DFe", "Senha", self.cert_password)
-            self.config(lib, handle, "DFe", "VerificarValidade", "0")
+            certificado = self.configurar_certificado(lib, handle)
             carregar = self.carregar_ini(lib, handle, ini_path)
             ret_assinar = lib.NFE_Assinar(handle)
             ultimo_assinar = self.ultimo(lib, handle)
@@ -256,7 +262,7 @@ class NFeOffline:
             limpar = self.limpar(lib, handle)
             if not include_xml:
                 xml.pop("xml", None)
-            return {"emitente": emitente, "ini_path": str(ini_path), "config_path": str(config_path), "certificado": {"pfx_path": str(pfx), "senha_len": len(self.cert_password)}, "carregar_ini": carregar, "assinar": {"ret": ret_assinar, "ultimo_retorno": ultimo_assinar}, "verificar_assinatura": {"ret": ret_ver, "mensagem": msg_ver, "tamanho": size_ver}, "obter_xml": xml, "limpar_lista": limpar}
+            return {"emitente": emitente, "ini_path": str(ini_path), "config_path": str(config_path), "certificado": certificado, "carregar_ini": carregar, "assinar": {"ret": ret_assinar, "ultimo_retorno": ultimo_assinar}, "verificar_assinatura": {"ret": ret_ver, "mensagem": msg_ver, "tamanho": size_ver}, "obter_xml": xml, "limpar_lista": limpar}
         finally:
             if lib is not None and handle.value:
                 lib.NFE_Finalizar(handle)
@@ -274,6 +280,38 @@ class NFeOffline:
             ret, mensagem, tamanho = self.text_call(lib.NFE_ValidarRegrasdeNegocios, handle, 65536)
             limpar = self.limpar(lib, handle)
             return {"emitente": emitente, "ini_path": str(ini_path), "config_path": str(config_path), "carregar_ini": carregar, "validar_regras": {"ret": ret, "mensagem": mensagem, "tamanho": tamanho}, "limpar_lista": limpar}
+        finally:
+            if lib is not None and handle.value:
+                lib.NFE_Finalizar(handle)
+
+    def executar_status_servico(self, payload: dict[str, Any]) -> dict[str, Any]:
+        emitente = self.apply_emitter(payload)
+        ambiente_original = self.ambiente
+        self.ambiente = "2"  # StatusServico sempre em homologação neste endpoint.
+        emitente["ambiente_original_banco"] = ambiente_original
+        emitente["ambiente"] = "2"
+        emitente["ambiente_forcado"] = "homologacao"
+
+        handle = ctypes.c_void_p(None)
+        lib = None
+        try:
+            lib = self.load_lib()
+            handle, config_path = self.inicializar(lib)
+            self.config_padrao(lib, handle)
+            certificado = self.configurar_certificado(lib, handle)
+            ret_status, mensagem, tamanho = self.text_call(lib.NFE_StatusServico, handle, 256 * 1024)
+            ultimo = self.ultimo(lib, handle)
+            return {
+                "emitente": emitente,
+                "config_path": str(config_path),
+                "certificado": certificado,
+                "status_servico": {
+                    "ret": ret_status,
+                    "mensagem": mensagem,
+                    "tamanho": tamanho,
+                    "ultimo_retorno": ultimo,
+                },
+            }
         finally:
             if lib is not None and handle.value:
                 lib.NFE_Finalizar(handle)
