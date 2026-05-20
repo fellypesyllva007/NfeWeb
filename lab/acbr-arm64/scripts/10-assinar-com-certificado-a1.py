@@ -96,7 +96,7 @@ def write_acbrlib_ini(base: Path, pfx_path: Path, pfx_password: str) -> tuple[Pa
                 "[DFe]",
                 "UF=SP",
                 "SSLLib=4",
-                "CryptLib=3",
+                "CryptLib=1",
                 "HttpLib=2",
                 "XmlSignLib=4",
                 f"PathSchemas={schemas}",
@@ -178,6 +178,7 @@ def main() -> int:
     print(f"Config ACBrLib: {config_ini}")
     print(f"INI NF-e: {sample_ini}")
     print(f"Certificado PFX: {pfx_path}")
+    print("CryptLib=1 (OpenSSL), XmlSignLib=4 (LibXml2)")
     print(f"Saída: {workdir}")
 
     lib = ctypes.CDLL(str(lib_path))
