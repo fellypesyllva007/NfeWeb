@@ -5,7 +5,7 @@ NfeWeb API mínima.
 Marcos implementados:
   - GET /health
   - GET /acbr/info
-  - GET /clientes
+  - GET /emitentes
   - GET /db/status
   - GET /db/emitentes
   - POST /nfe/gerar-chave
@@ -14,6 +14,7 @@ Marcos implementados:
   - POST /nfe/validar-regras
 
 A integração com a ACBrLibNFe fica encapsulada em fiscal_gateway.py e nfe_offline.py.
+A fonte de configuração fiscal multiempresa é exclusivamente o SQLite.
 """
 
 from __future__ import annotations
@@ -24,14 +25,13 @@ import platform
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable
 
-from client_registry import ClientRegistry, ClientRegistryError
 from database import db_status, list_emitters
 from fiscal_gateway import FiscalGateway, FiscalGatewayError
 from nfe_offline import NFeOffline, NFeOfflineError
 
 
 SERVICE_NAME = "nfeweb-api"
-SERVICE_VERSION = "0.7.0"
+SERVICE_VERSION = "0.8.0"
 
 
 def env(name: str, default: str) -> str:
@@ -86,16 +86,6 @@ def get_acbr_info() -> tuple[int, dict[str, Any]]:
         return 500, {"status": "error", "service": SERVICE_NAME, "error": type(exc).__name__, "message": str(exc)}
 
 
-def get_clientes() -> tuple[int, dict[str, Any]]:
-    try:
-        clientes = ClientRegistry().list_public()
-        return 200, {"status": "ok", "service": SERVICE_NAME, "clientes": clientes}
-    except ClientRegistryError as exc:
-        return 400, {"status": "error", "service": SERVICE_NAME, "error": "ClientRegistryError", "message": str(exc)}
-    except Exception as exc:  # noqa: BLE001
-        return 500, {"status": "error", "service": SERVICE_NAME, "error": type(exc).__name__, "message": str(exc)}
-
-
 def get_db_status() -> tuple[int, dict[str, Any]]:
     try:
         return 200, {"status": "ok", "service": SERVICE_NAME, "database": db_status()}
@@ -131,7 +121,7 @@ def post_nfe_offline(payload: dict[str, Any], operacao: str, fn: Callable[[NFeOf
 
 
 class NfeWebHandler(BaseHTTPRequestHandler):
-    server_version = "NfeWebAPI/0.7"
+    server_version = "NfeWebAPI/0.8"
 
     def do_GET(self) -> None:  # noqa: N802
         if self.path in ("/health", "/api/health"):
@@ -143,19 +133,26 @@ class NfeWebHandler(BaseHTTPRequestHandler):
             json_response(self, status, payload)
             return
 
-        if self.path in ("/clientes", "/api/clientes"):
-            status, payload = get_clientes()
-            json_response(self, status, payload)
-            return
-
         if self.path in ("/db/status", "/api/db/status"):
             status, payload = get_db_status()
             json_response(self, status, payload)
             return
 
-        if self.path in ("/db/emitentes", "/api/db/emitentes"):
+        if self.path in ("/db/emitentes", "/api/db/emitentes", "/emitentes", "/api/emitentes"):
             status, payload = get_db_emitentes()
             json_response(self, status, payload)
+            return
+
+        if self.path in ("/clientes", "/api/clientes"):
+            json_response(
+                self,
+                410,
+                {
+                    "status": "gone",
+                    "service": SERVICE_NAME,
+                    "message": "A rota /clientes foi removida. Use /api/emitentes; a fonte única agora é o SQLite.",
+                },
+            )
             return
 
         if self.path in ("/", "/api", "/api/"):
@@ -168,13 +165,14 @@ class NfeWebHandler(BaseHTTPRequestHandler):
                     "message": "NfeWeb API ativa",
                     "health": "/health",
                     "acbr_info": "/acbr/info",
-                    "clientes": "/clientes",
+                    "emitentes": "/emitentes",
                     "db_status": "/db/status",
                     "db_emitentes": "/db/emitentes",
                     "nfe_gerar_chave": "/nfe/gerar-chave",
                     "nfe_carregar_ini": "/nfe/carregar-ini",
                     "nfe_assinar": "/nfe/assinar",
                     "nfe_validar_regras": "/nfe/validar-regras",
+                    "payload_fiscal_padrao": {"emitter_id": "emit_lab_acbr_sample"},
                 },
             )
             return
