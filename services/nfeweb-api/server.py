@@ -12,6 +12,7 @@ Marcos implementados:
   - POST /nfe/carregar-ini
   - POST /nfe/assinar
   - POST /nfe/validar-regras
+  - POST /nfe/status-servico
 
 A integração com a ACBrLibNFe fica encapsulada em fiscal_gateway.py e nfe_offline.py.
 A fonte de configuração fiscal multiempresa é exclusivamente o SQLite.
@@ -31,7 +32,7 @@ from nfe_offline import NFeOffline, NFeOfflineError
 
 
 SERVICE_NAME = "nfeweb-api"
-SERVICE_VERSION = "0.8.0"
+SERVICE_VERSION = "0.9.0"
 
 
 def env(name: str, default: str) -> str:
@@ -121,7 +122,7 @@ def post_nfe_offline(payload: dict[str, Any], operacao: str, fn: Callable[[NFeOf
 
 
 class NfeWebHandler(BaseHTTPRequestHandler):
-    server_version = "NfeWebAPI/0.8"
+    server_version = "NfeWebAPI/0.9"
 
     def do_GET(self) -> None:  # noqa: N802
         if self.path in ("/health", "/api/health"):
@@ -172,6 +173,7 @@ class NfeWebHandler(BaseHTTPRequestHandler):
                     "nfe_carregar_ini": "/nfe/carregar-ini",
                     "nfe_assinar": "/nfe/assinar",
                     "nfe_validar_regras": "/nfe/validar-regras",
+                    "nfe_status_servico": "/nfe/status-servico",
                     "payload_fiscal_padrao": {"emitter_id": "emit_lab_acbr_sample"},
                 },
             )
@@ -187,6 +189,8 @@ class NfeWebHandler(BaseHTTPRequestHandler):
             "/api/nfe/assinar": ("nfe.assinar", lambda svc, payload: svc.executar_assinar(payload)),
             "/nfe/validar-regras": ("nfe.validar_regras", lambda svc, payload: svc.executar_validar_regras(payload)),
             "/api/nfe/validar-regras": ("nfe.validar_regras", lambda svc, payload: svc.executar_validar_regras(payload)),
+            "/nfe/status-servico": ("nfe.status_servico", lambda svc, payload: svc.executar_status_servico(payload)),
+            "/api/nfe/status-servico": ("nfe.status_servico", lambda svc, payload: svc.executar_status_servico(payload)),
         }
 
         try:
