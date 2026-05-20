@@ -5,6 +5,7 @@ NfeWeb API mínima.
 Marcos implementados:
   - GET /health
   - GET /acbr/info
+  - POST /nfe/gerar-chave
 
 A integração com a ACBrLibNFe fica encapsulada em fiscal_gateway.py.
 """
@@ -21,7 +22,7 @@ from fiscal_gateway import FiscalGateway, FiscalGatewayError
 
 
 SERVICE_NAME = "nfeweb-api"
-SERVICE_VERSION = "0.3.0"
+SERVICE_VERSION = "0.4.0"
 
 
 def env(name: str, default: str) -> str:
@@ -36,6 +37,22 @@ def json_response(handler: BaseHTTPRequestHandler, status: int, payload: dict[st
     handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()
     handler.wfile.write(body)
+
+
+def read_json_body(handler: BaseHTTPRequestHandler) -> dict[str, Any]:
+    content_length = int(handler.headers.get("Content-Length", "0") or "0")
+    if content_length <= 0:
+        return {}
+
+    raw = handler.rfile.read(content_length)
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"JSON inválido: {exc}") from exc
+
+    if not isinstance(payload, dict):
+        raise ValueError("JSON precisa ser um objeto")
+    return payload
 
 
 def get_acbr_info() -> tuple[int, dict[str, Any]]:
@@ -70,8 +87,35 @@ def get_acbr_info() -> tuple[int, dict[str, Any]]:
         }
 
 
+def post_gerar_chave(payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    try:
+        resultado = FiscalGateway().gerar_chave(payload)
+        return 200, {
+            "status": "ok",
+            "service": SERVICE_NAME,
+            "operacao": "nfe.gerar_chave",
+            "resultado": resultado,
+        }
+    except FiscalGatewayError as exc:
+        return 400, {
+            "status": "error",
+            "service": SERVICE_NAME,
+            "operacao": "nfe.gerar_chave",
+            "error": "FiscalGatewayError",
+            "message": str(exc),
+        }
+    except Exception as exc:  # noqa: BLE001
+        return 500, {
+            "status": "error",
+            "service": SERVICE_NAME,
+            "operacao": "nfe.gerar_chave",
+            "error": type(exc).__name__,
+            "message": str(exc),
+        }
+
+
 class NfeWebHandler(BaseHTTPRequestHandler):
-    server_version = "NfeWebAPI/0.3"
+    server_version = "NfeWebAPI/0.4"
 
     def do_GET(self) -> None:  # noqa: N802 - nome exigido por BaseHTTPRequestHandler
         if self.path in ("/health", "/api/health"):
@@ -103,8 +147,40 @@ class NfeWebHandler(BaseHTTPRequestHandler):
                     "message": "NfeWeb API ativa",
                     "health": "/health",
                     "acbr_info": "/acbr/info",
+                    "nfe_gerar_chave": "/nfe/gerar-chave",
                 },
             )
+            return
+
+        json_response(
+            self,
+            404,
+            {
+                "status": "not_found",
+                "service": SERVICE_NAME,
+                "path": self.path,
+            },
+        )
+
+    def do_POST(self) -> None:  # noqa: N802 - nome exigido por BaseHTTPRequestHandler
+        if self.path in ("/nfe/gerar-chave", "/api/nfe/gerar-chave"):
+            try:
+                payload = read_json_body(self)
+            except ValueError as exc:
+                json_response(
+                    self,
+                    400,
+                    {
+                        "status": "error",
+                        "service": SERVICE_NAME,
+                        "error": "invalid_json",
+                        "message": str(exc),
+                    },
+                )
+                return
+
+            status, response_payload = post_gerar_chave(payload)
+            json_response(self, status, response_payload)
             return
 
         json_response(
