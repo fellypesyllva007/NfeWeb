@@ -124,3 +124,10 @@ export const fiscalContextSchema = z.object({
     active: z.boolean()
   })).optional()
 });
+
+export const databaseCalculationRequestSchema = z.object({
+  tenantId: z.string().min(1),
+  documentId: z.string().min(1),
+  mode: z.enum(['preview', 'official']).default('preview'),
+  persistSnapshot: z.boolean().default(false)
+});
