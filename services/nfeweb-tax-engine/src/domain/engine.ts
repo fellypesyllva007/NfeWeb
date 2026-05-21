@@ -5,10 +5,11 @@ import { resolveRuleForItem } from './ruleResolver.js';
 import { buildAcbrFiscalDraft } from './acbrMapper.js';
 import { buildNfeItemSnapshot } from './nfeItemMapper.js';
 import { buildNfeTotals } from './nfeTotals.js';
-import type { CalculatedTaxDocument, CalculatedTaxItem, FiscalContext, TaxTotals } from './types.js';
+import type { TaxEngineCalculatedItem, TaxEngineCalculationResult } from './resultTypes.js';
+import type { CalculatedTaxItem, FiscalContext, TaxTotals } from './types.js';
 
-export function calculateDocument(context: FiscalContext): CalculatedTaxDocument {
-  const items: CalculatedTaxItem[] = context.items.map((item) => {
+export function calculateDocument(context: FiscalContext): TaxEngineCalculationResult {
+  const items: TaxEngineCalculatedItem[] = context.items.map((item) => {
     const resolved = resolveRuleForItem(context, item);
     const base = calculateItemBase(item);
     const taxes = calculateTaxes(base, resolved.output);
@@ -34,8 +35,8 @@ export function calculateDocument(context: FiscalContext): CalculatedTaxDocument
 
     return {
       ...calculatedItem,
-      ...( { nfe: buildNfeItemSnapshot(calculatedItem, item) } as Record<string, unknown> )
-    } as CalculatedTaxItem;
+      nfe: buildNfeItemSnapshot(calculatedItem, item)
+    };
   });
 
   const warnings = items.flatMap((item) => item.warnings);
@@ -46,7 +47,7 @@ export function calculateDocument(context: FiscalContext): CalculatedTaxDocument
     if (!item.taxes.icms?.cst && !item.taxes.icms?.csosn) warnings.push(`Item ${item.itemId} sem CST/CSOSN de ICMS resolvido.`);
   }
 
-  const result = {
+  const resultWithoutAcbr = {
     status: errors.length > 0 ? 'error' : warnings.length > 0 ? 'warning' : 'ok',
     calculationId: nanoid(),
     tenantId: context.tenantId,
@@ -55,16 +56,16 @@ export function calculateDocument(context: FiscalContext): CalculatedTaxDocument
     mode: context.mode,
     calculatedAt: new Date().toISOString(),
     totals: calculateTotals(items),
-    ...( { nfeTotals: buildNfeTotals(items) } as Record<string, unknown> ),
+    nfeTotals: buildNfeTotals(items),
     items,
     warnings,
     errors
-  } as CalculatedTaxDocument;
+  } satisfies Omit<TaxEngineCalculationResult, 'acbrDraft'>;
 
   return {
-    ...result,
-    ...( { acbrDraft: buildAcbrFiscalDraft(result) } as Record<string, unknown> )
-  } as CalculatedTaxDocument;
+    ...resultWithoutAcbr,
+    acbrDraft: buildAcbrFiscalDraft(resultWithoutAcbr)
+  };
 }
 
 function calculateTotals(items: CalculatedTaxItem[]): TaxTotals {
