@@ -2,6 +2,7 @@ import { nanoid } from 'nanoid';
 import { D, money } from './decimal.js';
 import { calculateItemBase, calculateTaxes } from './calculators.js';
 import { resolveRuleForItem } from './ruleResolver.js';
+import { buildAcbrFiscalDraft } from './acbrMapper.js';
 import { buildNfeItemSnapshot } from './nfeItemMapper.js';
 import { buildNfeTotals } from './nfeTotals.js';
 import type { CalculatedTaxDocument, CalculatedTaxItem, FiscalContext, TaxTotals } from './types.js';
@@ -45,10 +46,11 @@ export function calculateDocument(context: FiscalContext): CalculatedTaxDocument
     if (!item.taxes.icms?.cst && !item.taxes.icms?.csosn) warnings.push(`Item ${item.itemId} sem CST/CSOSN de ICMS resolvido.`);
   }
 
-  return {
+  const result = {
     status: errors.length > 0 ? 'error' : warnings.length > 0 ? 'warning' : 'ok',
     calculationId: nanoid(),
     tenantId: context.tenantId,
+    emitterId: context.emitterId,
     documentId: context.documentId,
     mode: context.mode,
     calculatedAt: new Date().toISOString(),
@@ -57,6 +59,11 @@ export function calculateDocument(context: FiscalContext): CalculatedTaxDocument
     items,
     warnings,
     errors
+  } as CalculatedTaxDocument;
+
+  return {
+    ...result,
+    ...( { acbrDraft: buildAcbrFiscalDraft(result) } as Record<string, unknown> )
   } as CalculatedTaxDocument;
 }
 
