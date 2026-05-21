@@ -1,0 +1,23 @@
+[Unit]
+Description=NfeWeb Tax Engine API
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/NfeWeb/services/nfeweb-tax-engine
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=PORT=3340
+EnvironmentFile=-/etc/nfeweb/nfeweb-tax-engine.env
+ExecStart=/usr/bin/node /home/ubuntu/NfeWeb/services/nfeweb-tax-engine/dist/server.js
+Restart=always
+RestartSec=5
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=false
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
