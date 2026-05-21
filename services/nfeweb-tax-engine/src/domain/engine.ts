@@ -2,6 +2,7 @@ import { nanoid } from 'nanoid';
 import { D, money } from './decimal.js';
 import { calculateItemBase, calculateTaxes } from './calculators.js';
 import { resolveRuleForItem } from './ruleResolver.js';
+import { buildNfeItemSnapshot } from './nfeItemMapper.js';
 import { buildNfeTotals } from './nfeTotals.js';
 import type { CalculatedTaxDocument, CalculatedTaxItem, FiscalContext, TaxTotals } from './types.js';
 
@@ -11,16 +12,7 @@ export function calculateDocument(context: FiscalContext): CalculatedTaxDocument
     const base = calculateItemBase(item);
     const taxes = calculateTaxes(base, resolved.output);
 
-    const snapshot = {
-      input: item,
-      rule: resolved.rule,
-      exceptions: resolved.exceptions,
-      output: resolved.output,
-      mode: context.mode,
-      calculatedAt: new Date().toISOString()
-    };
-
-    return {
+    const calculatedItem = {
       itemId: item.itemId,
       productId: item.productId,
       cfop: resolved.output.cfop ?? item.cfop,
@@ -28,9 +20,21 @@ export function calculateDocument(context: FiscalContext): CalculatedTaxDocument
       exceptionIdsApplied: resolved.exceptions.map((exception) => exception.id),
       base,
       taxes,
-      snapshot,
+      snapshot: {
+        input: item,
+        rule: resolved.rule,
+        exceptions: resolved.exceptions,
+        output: resolved.output,
+        mode: context.mode,
+        calculatedAt: new Date().toISOString()
+      },
       warnings: resolved.warnings
-    };
+    } as CalculatedTaxItem;
+
+    return {
+      ...calculatedItem,
+      ...( { nfe: buildNfeItemSnapshot(calculatedItem, item) } as Record<string, unknown> )
+    } as CalculatedTaxItem;
   });
 
   const warnings = items.flatMap((item) => item.warnings);
