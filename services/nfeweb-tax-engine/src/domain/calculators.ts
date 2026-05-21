@@ -9,19 +9,27 @@ export function calculateItemBase(input: {
   insuranceValue?: string;
   discountValue?: string;
   otherValue?: string;
+  iiValue?: string;
+  ipiDevolValue?: string;
 }): ItemBaseValues {
   const productValue = D(input.quantity).mul(D(input.unitPrice));
+  const freightValue = D(input.freightValue);
+  const insuranceValue = D(input.insuranceValue);
   const discountValue = D(input.discountValue);
-  const operationValue = productValue
-    .plus(D(input.freightValue))
-    .plus(D(input.insuranceValue))
-    .plus(D(input.otherValue))
-    .minus(discountValue);
+  const otherValue = D(input.otherValue);
+  const operationValue = productValue.plus(freightValue).plus(insuranceValue).plus(otherValue).minus(discountValue);
 
   return {
     productValue: money(productValue),
     operationValue: money(operationValue),
-    discountValue: money(discountValue)
+    discountValue: money(discountValue),
+    ...( {
+      freightValue: money(freightValue),
+      insuranceValue: money(insuranceValue),
+      otherValue: money(otherValue),
+      iiValue: money(D(input.iiValue)),
+      ipiDevolValue: money(D(input.ipiDevolValue))
+    } as Partial<ItemBaseValues> )
   };
 }
 
@@ -29,25 +37,28 @@ export function calculateTaxes(base: ItemBaseValues, output: TaxRuleOutput): Ite
   const operationBase = D(base.operationValue);
   const taxes: ItemTaxValues = {};
 
-  if (output.icms) taxes.icms = calculateIcms(operationBase, output.icms);
-  if (output.ipi?.enabled !== false && output.ipi?.aliquota) taxes.ipi = { ...calculatePercentTax(operationBase, output.ipi), cst: output.ipi.cst };
-  if (output.pis?.enabled !== false && output.pis?.aliquota) taxes.pis = { ...calculatePercentTax(operationBase, output.pis), cst: output.pis.cst };
-  if (output.cofins?.enabled !== false && output.cofins?.aliquota) taxes.cofins = { ...calculatePercentTax(operationBase, output.cofins), cst: output.cofins.cst };
-  if (output.difal?.enabled) taxes.difal = calculateDifal(operationBase, output.difal);
-  if (output.icmsSt?.enabled) taxes.icmsSt = calculateIcmsSt(operationBase, output.icmsSt, taxes.icms?.valor);
+  if (output.icms) taxes.icms = calculateIcms(resolveTaxBase(operationBase, output.icms.manualBase), output.icms);
+  if (output.ipi?.enabled !== false && output.ipi?.aliquota) taxes.ipi = { ...calculatePercentTax(resolveTaxBase(operationBase, output.ipi.manualBase), output.ipi), cst: output.ipi.cst };
+  if (output.pis?.enabled !== false && output.pis?.aliquota) taxes.pis = { ...calculatePercentTax(resolveTaxBase(operationBase, output.pis.manualBase), output.pis), cst: output.pis.cst };
+  if (output.cofins?.enabled !== false && output.cofins?.aliquota) taxes.cofins = { ...calculatePercentTax(resolveTaxBase(operationBase, output.cofins.manualBase), output.cofins), cst: output.cofins.cst };
+  if (output.difal?.enabled) taxes.difal = calculateDifal(resolveTaxBase(operationBase, output.difal.manualBase), output.difal);
+  if (output.icmsSt?.enabled) taxes.icmsSt = calculateIcmsSt(resolveTaxBase(operationBase, output.icmsSt.manualBase), output.icmsSt, taxes.icms?.valor);
 
   return taxes;
 }
 
-export function calculateIcms(base: Decimal, icms: IcmsOutput): CalculatedPercentTax & { cst?: string; csosn?: string } {
+export function calculateIcms(base: Decimal, icms: IcmsOutput): CalculatedPercentTax & { cst?: string; csosn?: string; valorDesonerado?: string; valorFcp?: string } {
   const reducedBase = applyReduction(base, icms.reducaoBc);
   const aliquota = icms.aliquota ?? '0';
+  const valor = percentOf(reducedBase, aliquota);
   return {
     cst: icms.cst,
     csosn: icms.csosn,
     base: money(reducedBase),
     aliquota,
-    valor: money(percentOf(reducedBase, aliquota))
+    valor: money(valor),
+    valorDesonerado: icms.desoneracao?.aliquota ? money(percentOf(reducedBase, icms.desoneracao.aliquota)) : '0.00',
+    valorFcp: icms.fcpAliquota ? money(percentOf(reducedBase, icms.fcpAliquota)) : '0.00'
   };
 }
 
@@ -76,7 +87,7 @@ export function calculateDifal(base: Decimal, difal: DifalOutput): { base: strin
   };
 }
 
-export function calculateIcmsSt(base: Decimal, st: IcmsStOutput, icmsProprioValor = '0'): { base: string; valor: string; mvaAplicada?: string } {
+export function calculateIcmsSt(base: Decimal, st: IcmsStOutput, icmsProprioValor = '0'): { base: string; valor: string; mvaAplicada?: string; valorFcpSt?: string } {
   const mva = D(st.mvaAjustada ?? st.mva ?? '0');
   const baseComMva = base.mul(new Decimal(1).plus(mva.div(100)));
   const reducedBase = applyReduction(baseComMva, st.reducaoBcSt);
@@ -86,11 +97,16 @@ export function calculateIcmsSt(base: Decimal, st: IcmsStOutput, icmsProprioValo
   return {
     base: money(reducedBase),
     valor: money(valorSt),
-    mvaAplicada: st.mvaAjustada ?? st.mva
+    mvaAplicada: st.mvaAjustada ?? st.mva,
+    valorFcpSt: st.fcpAliquota ? money(percentOf(reducedBase, st.fcpAliquota)) : '0.00'
   };
 }
 
 function applyReduction(base: Decimal, reducaoBc?: string): Decimal {
   if (!reducaoBc) return base;
   return base.mul(new Decimal(1).minus(D(reducaoBc).div(100)));
+}
+
+function resolveTaxBase(defaultBase: Decimal, manualBase?: string): Decimal {
+  return manualBase ? D(manualBase) : defaultBase;
 }
