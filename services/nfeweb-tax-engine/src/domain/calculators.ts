@@ -29,25 +29,32 @@ export function calculateItemBase(input: {
       otherValue: money(otherValue),
       iiValue: money(D(input.iiValue)),
       ipiDevolValue: money(D(input.ipiDevolValue))
-    } as Partial<ItemBaseValues> )
-  };
+    } as Record<string, string> )
+  } as ItemBaseValues;
 }
 
 export function calculateTaxes(base: ItemBaseValues, output: TaxRuleOutput): ItemTaxValues {
   const operationBase = D(base.operationValue);
   const taxes: ItemTaxValues = {};
+  const icms = output.icms as (IcmsOutput & { manualBase?: string }) | undefined;
+  const ipi = output.ipi as (PercentTaxOutput & { cst?: string; manualBase?: string }) | undefined;
+  const pis = output.pis as (PercentTaxOutput & { cst?: string; manualBase?: string }) | undefined;
+  const cofins = output.cofins as (PercentTaxOutput & { cst?: string; manualBase?: string }) | undefined;
+  const difal = output.difal as (DifalOutput & { manualBase?: string }) | undefined;
+  const icmsSt = output.icmsSt as (IcmsStOutput & { manualBase?: string }) | undefined;
 
-  if (output.icms) taxes.icms = calculateIcms(resolveTaxBase(operationBase, output.icms.manualBase), output.icms);
-  if (output.ipi?.enabled !== false && output.ipi?.aliquota) taxes.ipi = { ...calculatePercentTax(resolveTaxBase(operationBase, output.ipi.manualBase), output.ipi), cst: output.ipi.cst };
-  if (output.pis?.enabled !== false && output.pis?.aliquota) taxes.pis = { ...calculatePercentTax(resolveTaxBase(operationBase, output.pis.manualBase), output.pis), cst: output.pis.cst };
-  if (output.cofins?.enabled !== false && output.cofins?.aliquota) taxes.cofins = { ...calculatePercentTax(resolveTaxBase(operationBase, output.cofins.manualBase), output.cofins), cst: output.cofins.cst };
-  if (output.difal?.enabled) taxes.difal = calculateDifal(resolveTaxBase(operationBase, output.difal.manualBase), output.difal);
-  if (output.icmsSt?.enabled) taxes.icmsSt = calculateIcmsSt(resolveTaxBase(operationBase, output.icmsSt.manualBase), output.icmsSt, taxes.icms?.valor);
+  if (icms) taxes.icms = calculateIcms(resolveTaxBase(operationBase, icms.manualBase), icms);
+  if (ipi?.enabled !== false && ipi?.aliquota) taxes.ipi = { ...calculatePercentTax(resolveTaxBase(operationBase, ipi.manualBase), ipi), cst: ipi.cst };
+  if (pis?.enabled !== false && pis?.aliquota) taxes.pis = { ...calculatePercentTax(resolveTaxBase(operationBase, pis.manualBase), pis), cst: pis.cst };
+  if (cofins?.enabled !== false && cofins?.aliquota) taxes.cofins = { ...calculatePercentTax(resolveTaxBase(operationBase, cofins.manualBase), cofins), cst: cofins.cst };
+  if (difal?.enabled) taxes.difal = calculateDifal(resolveTaxBase(operationBase, difal.manualBase), difal);
+  if (icmsSt?.enabled) taxes.icmsSt = calculateIcmsSt(resolveTaxBase(operationBase, icmsSt.manualBase), icmsSt, taxes.icms?.valor);
 
   return taxes;
 }
 
 export function calculateIcms(base: Decimal, icms: IcmsOutput): CalculatedPercentTax & { cst?: string; csosn?: string; valorDesonerado?: string; valorFcp?: string } {
+  const icmsExtended = icms as IcmsOutput & { fcpAliquota?: string };
   const reducedBase = applyReduction(base, icms.reducaoBc);
   const aliquota = icms.aliquota ?? '0';
   const valor = percentOf(reducedBase, aliquota);
@@ -58,7 +65,7 @@ export function calculateIcms(base: Decimal, icms: IcmsOutput): CalculatedPercen
     aliquota,
     valor: money(valor),
     valorDesonerado: icms.desoneracao?.aliquota ? money(percentOf(reducedBase, icms.desoneracao.aliquota)) : '0.00',
-    valorFcp: icms.fcpAliquota ? money(percentOf(reducedBase, icms.fcpAliquota)) : '0.00'
+    valorFcp: icmsExtended.fcpAliquota ? money(percentOf(reducedBase, icmsExtended.fcpAliquota)) : '0.00'
   };
 }
 
@@ -88,6 +95,7 @@ export function calculateDifal(base: Decimal, difal: DifalOutput): { base: strin
 }
 
 export function calculateIcmsSt(base: Decimal, st: IcmsStOutput, icmsProprioValor = '0'): { base: string; valor: string; mvaAplicada?: string; valorFcpSt?: string } {
+  const stExtended = st as IcmsStOutput & { fcpAliquota?: string };
   const mva = D(st.mvaAjustada ?? st.mva ?? '0');
   const baseComMva = base.mul(new Decimal(1).plus(mva.div(100)));
   const reducedBase = applyReduction(baseComMva, st.reducaoBcSt);
@@ -98,7 +106,7 @@ export function calculateIcmsSt(base: Decimal, st: IcmsStOutput, icmsProprioValo
     base: money(reducedBase),
     valor: money(valorSt),
     mvaAplicada: st.mvaAjustada ?? st.mva,
-    valorFcpSt: st.fcpAliquota ? money(percentOf(reducedBase, st.fcpAliquota)) : '0.00'
+    valorFcpSt: stExtended.fcpAliquota ? money(percentOf(reducedBase, stExtended.fcpAliquota)) : '0.00'
   };
 }
 
