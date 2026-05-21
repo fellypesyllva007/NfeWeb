@@ -1,0 +1,73 @@
+{
+  "tenantId": "tenant_lab",
+  "emitterId": "emit_lab_acbr_sample",
+  "documentId": "doc_lab_001",
+  "mode": "preview",
+  "emitter": {
+    "uf": "SP",
+    "cnpj": "92390477000149",
+    "taxRegime": "lucro_presumido",
+    "crt": "3"
+  },
+  "customer": {
+    "uf": "SP",
+    "kind": "pj",
+    "document": "00000000000191",
+    "isIcmsContributor": true,
+    "isFinalConsumer": false
+  },
+  "operation": {
+    "type": "venda_mercadoria",
+    "isInterstate": false,
+    "naturezaOperacao": "Venda de mercadoria"
+  },
+  "items": [
+    {
+      "itemId": "1",
+      "productId": "prod_fonte_001",
+      "description": "Fonte chaveada laboratório",
+      "ncm": "85044090",
+      "quantity": "2.0000",
+      "unitPrice": "100.00"
+    },
+    {
+      "itemId": "2",
+      "productId": "prod_especial_002",
+      "description": "Produto com IPI específico",
+      "ncm": "85044090",
+      "quantity": "1.0000",
+      "unitPrice": "200.00",
+      "manualOverrides": {
+        "ipi": { "enabled": true, "cst": "50", "aliquota": "15.00" },
+        "reason": "Exemplo de item com IPI específico por cadastro fiscal do produto"
+      }
+    }
+  ],
+  "rules": [
+    {
+      "id": "tenant-sp-lp-85044090-venda",
+      "tenantId": "tenant_lab",
+      "name": "Venda interna SP NCM 85044090 lucro presumido",
+      "priority": 500,
+      "active": true,
+      "source": "tenant",
+      "legalReference": "Regra parametrizada pelo tenant; validar base legal antes de produção.",
+      "conditions": {
+        "taxRegime": ["lucro_presumido"],
+        "ufOrigin": ["SP"],
+        "ufDestination": ["SP"],
+        "operationType": ["venda_mercadoria"],
+        "ncm": ["85044090"],
+        "interstate": false
+      },
+      "output": {
+        "cfop": "5102",
+        "icms": { "cst": "00", "aliquota": "18.00" },
+        "ipi": { "enabled": true, "cst": "50", "aliquota": "5.00" },
+        "pis": { "enabled": true, "cst": "01", "aliquota": "0.65" },
+        "cofins": { "enabled": true, "cst": "01", "aliquota": "3.00" }
+      }
+    }
+  ],
+  "exceptions": []
+}
