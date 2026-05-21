@@ -11,12 +11,14 @@ export interface NfeItemTaxSnapshot {
     IPI?: Record<string, string | undefined>;
     PIS?: Record<string, string | undefined>;
     COFINS?: Record<string, string | undefined>;
+    ICMSUFDest?: Record<string, string | undefined>;
   };
   nfeTags: {
     icmsGroup?: NfeIcmsGroupName;
     ipiGroup?: 'IPITrib' | 'IPINT';
     pisGroup?: 'PISAliq' | 'PISQtde' | 'PISNT' | 'PISOutr';
     cofinsGroup?: 'COFINSAliq' | 'COFINSQtde' | 'COFINSNT' | 'COFINSOutr';
+    difalGroup?: 'ICMSUFDest';
   };
 }
 
