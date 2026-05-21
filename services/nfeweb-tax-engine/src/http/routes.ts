@@ -1,7 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { calculateDocument } from '../domain/engine.js';
 import type { FiscalContext } from '../domain/types.js';
-import { fiscalContextSchema } from './schemas.js';
+import { loadFiscalContextFromDatabase, saveCalculationSnapshot } from '../infra/taxContextRepository.js';
+import { databaseCalculationRequestSchema, fiscalContextSchema } from './schemas.js';
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.get('/health', async () => ({
@@ -33,6 +34,22 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     }
 
     return calculateDocument(parsed.data as FiscalContext);
+  });
+
+  app.post('/api/tax/calculate-document/from-db', async (request, reply) => {
+    const parsed = databaseCalculationRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ status: 'error', error: 'ValidationError', issues: parsed.error.issues });
+    }
+
+    const context = await loadFiscalContextFromDatabase(parsed.data);
+    const result = calculateDocument(context);
+
+    if (parsed.data.persistSnapshot) {
+      await saveCalculationSnapshot(result);
+    }
+
+    return result;
   });
 
   app.post('/api/tax/calculate-item', async (request, reply) => {
