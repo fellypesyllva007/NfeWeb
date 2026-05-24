@@ -1,22 +1,5 @@
 #!/usr/bin/env python3
-"""
-NfeWeb API mínima.
-
-Marcos implementados:
-  - GET /health
-  - GET /acbr/info
-  - GET /emitentes
-  - GET /db/status
-  - GET /db/emitentes
-  - POST /nfe/gerar-chave
-  - POST /nfe/carregar-ini
-  - POST /nfe/assinar
-  - POST /nfe/validar-regras
-  - POST /nfe/status-servico
-
-A integração com a ACBrLibNFe fica encapsulada em fiscal_gateway.py e nfe_offline.py.
-A fonte de configuração fiscal multiempresa é exclusivamente o SQLite.
-"""
+"""NfeWeb API mínima com autenticação real por cookie HttpOnly."""
 
 from __future__ import annotations
 
@@ -26,10 +9,10 @@ import platform
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable
 
+import auth
 from database import db_status, list_emitters
 from fiscal_gateway import FiscalGateway, FiscalGatewayError
 from nfe_offline import NFeOffline, NFeOfflineError
-
 
 SERVICE_NAME = "nfeweb-api"
 SERVICE_VERSION = "0.9.0"
@@ -40,11 +23,14 @@ def env(name: str, default: str) -> str:
     return value if value not in (None, "") else default
 
 
-def json_response(handler: BaseHTTPRequestHandler, status: int, payload: dict[str, Any]) -> None:
+def json_response(handler: BaseHTTPRequestHandler, status: int, payload: dict[str, Any], headers: dict[str, str] | None = None) -> None:
     body = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
     handler.send_response(status)
     handler.send_header("Content-Type", "application/json; charset=utf-8")
     handler.send_header("Content-Length", str(len(body)))
+    if headers:
+        for key, value in headers.items():
+            handler.send_header(key, value)
     handler.end_headers()
     handler.wfile.write(body)
 
@@ -53,13 +39,11 @@ def read_json_body(handler: BaseHTTPRequestHandler) -> dict[str, Any]:
     content_length = int(handler.headers.get("Content-Length", "0") or "0")
     if content_length <= 0:
         return {}
-
     raw = handler.rfile.read(content_length)
     try:
         payload = json.loads(raw.decode("utf-8"))
     except json.JSONDecodeError as exc:
         raise ValueError(f"JSON inválido: {exc}") from exc
-
     if not isinstance(payload, dict):
         raise ValueError("JSON precisa ser um objeto")
     return payload
@@ -83,21 +67,21 @@ def get_acbr_info() -> tuple[int, dict[str, Any]]:
         }
     except FiscalGatewayError as exc:
         return 500, {"status": "error", "service": SERVICE_NAME, "error": "FiscalGatewayError", "message": str(exc)}
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return 500, {"status": "error", "service": SERVICE_NAME, "error": type(exc).__name__, "message": str(exc)}
 
 
 def get_db_status() -> tuple[int, dict[str, Any]]:
     try:
         return 200, {"status": "ok", "service": SERVICE_NAME, "database": db_status()}
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return 500, {"status": "error", "service": SERVICE_NAME, "error": type(exc).__name__, "message": str(exc)}
 
 
 def get_db_emitentes() -> tuple[int, dict[str, Any]]:
     try:
         return 200, {"status": "ok", "service": SERVICE_NAME, "emitentes": list_emitters()}
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return 500, {"status": "error", "service": SERVICE_NAME, "error": type(exc).__name__, "message": str(exc)}
 
 
@@ -107,7 +91,7 @@ def post_gerar_chave(payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
         return 200, {"status": "ok", "service": SERVICE_NAME, "operacao": "nfe.gerar_chave", "resultado": resultado}
     except FiscalGatewayError as exc:
         return 400, {"status": "error", "service": SERVICE_NAME, "operacao": "nfe.gerar_chave", "error": "FiscalGatewayError", "message": str(exc)}
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return 500, {"status": "error", "service": SERVICE_NAME, "operacao": "nfe.gerar_chave", "error": type(exc).__name__, "message": str(exc)}
 
 
@@ -117,16 +101,24 @@ def post_nfe_offline(payload: dict[str, Any], operacao: str, fn: Callable[[NFeOf
         return 200, {"status": "ok", "service": SERVICE_NAME, "operacao": operacao, "resultado": resultado}
     except NFeOfflineError as exc:
         return 400, {"status": "error", "service": SERVICE_NAME, "operacao": operacao, "error": "NFeOfflineError", "message": str(exc)}
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return 500, {"status": "error", "service": SERVICE_NAME, "operacao": operacao, "error": type(exc).__name__, "message": str(exc)}
 
 
 class NfeWebHandler(BaseHTTPRequestHandler):
     server_version = "NfeWebAPI/0.9"
 
-    def do_GET(self) -> None:  # noqa: N802
+    def do_GET(self) -> None:
         if self.path in ("/health", "/api/health"):
             json_response(self, 200, {"status": "ok", "service": SERVICE_NAME, "version": SERVICE_VERSION, "arch": platform.machine(), "python": platform.python_version()})
+            return
+
+        if self.path in ("/auth/me", "/api/auth/me"):
+            user = auth.current_user(self.headers.get("Cookie"))
+            if user is None:
+                json_response(self, 401, {"status": "error", "service": SERVICE_NAME, "error": "unauthorized", "message": "Sessão inválida ou expirada"})
+                return
+            json_response(self, 200, {"status": "ok", "service": SERVICE_NAME, "user": user})
             return
 
         if self.path in ("/acbr/info", "/api/acbr/info"):
@@ -145,59 +137,47 @@ class NfeWebHandler(BaseHTTPRequestHandler):
             return
 
         if self.path in ("/clientes", "/api/clientes"):
-            json_response(
-                self,
-                410,
-                {
-                    "status": "gone",
-                    "service": SERVICE_NAME,
-                    "message": "A rota /clientes foi removida. Use /api/emitentes; a fonte única agora é o SQLite.",
-                },
-            )
+            json_response(self, 410, {"status": "gone", "service": SERVICE_NAME, "message": "A rota /clientes foi removida. Use /api/emitentes; a fonte única agora é o SQLite."})
             return
 
         if self.path in ("/", "/api", "/api/"):
-            json_response(
-                self,
-                200,
-                {
-                    "service": SERVICE_NAME,
-                    "version": SERVICE_VERSION,
-                    "message": "NfeWeb API ativa",
-                    "health": "/health",
-                    "acbr_info": "/acbr/info",
-                    "emitentes": "/emitentes",
-                    "db_status": "/db/status",
-                    "db_emitentes": "/db/emitentes",
-                    "nfe_gerar_chave": "/nfe/gerar-chave",
-                    "nfe_carregar_ini": "/nfe/carregar-ini",
-                    "nfe_assinar": "/nfe/assinar",
-                    "nfe_validar_regras": "/nfe/validar-regras",
-                    "nfe_status_servico": "/nfe/status-servico",
-                    "payload_fiscal_padrao": {"emitter_id": "emit_lab_acbr_sample"},
-                },
-            )
+            json_response(self, 200, {"service": SERVICE_NAME, "version": SERVICE_VERSION, "message": "NfeWeb API ativa", "health": "/health", "auth_login": "/auth/login", "auth_me": "/auth/me", "auth_logout": "/auth/logout", "acbr_info": "/acbr/info", "emitentes": "/emitentes", "db_status": "/db/status", "db_emitentes": "/db/emitentes", "payload_fiscal_padrao": {"emitter_id": "emit_lab_acbr_sample"}})
             return
 
         json_response(self, 404, {"status": "not_found", "service": SERVICE_NAME, "path": self.path})
 
-    def do_POST(self) -> None:  # noqa: N802
-        routes: dict[str, tuple[str, Callable[[NFeOffline, dict[str, Any]], dict[str, Any]]]] = {
-            "/nfe/carregar-ini": ("nfe.carregar_ini", lambda svc, payload: svc.executar_carregar_ini(payload)),
-            "/api/nfe/carregar-ini": ("nfe.carregar_ini", lambda svc, payload: svc.executar_carregar_ini(payload)),
-            "/nfe/assinar": ("nfe.assinar", lambda svc, payload: svc.executar_assinar(payload)),
-            "/api/nfe/assinar": ("nfe.assinar", lambda svc, payload: svc.executar_assinar(payload)),
-            "/nfe/validar-regras": ("nfe.validar_regras", lambda svc, payload: svc.executar_validar_regras(payload)),
-            "/api/nfe/validar-regras": ("nfe.validar_regras", lambda svc, payload: svc.executar_validar_regras(payload)),
-            "/nfe/status-servico": ("nfe.status_servico", lambda svc, payload: svc.executar_status_servico(payload)),
-            "/api/nfe/status-servico": ("nfe.status_servico", lambda svc, payload: svc.executar_status_servico(payload)),
-        }
-
+    def do_POST(self) -> None:
         try:
             payload = read_json_body(self)
         except ValueError as exc:
             json_response(self, 400, {"status": "error", "service": SERVICE_NAME, "error": "invalid_json", "message": str(exc)})
             return
+
+        if self.path in ("/auth/login", "/api/auth/login"):
+            try:
+                result = auth.login(str(payload.get("email", "")), str(payload.get("password", "")), str(payload.get("kind", "company")))
+                json_response(self, 200, {"status": "ok", "service": SERVICE_NAME, "user": result["user"], "expires_at": result["expires_at"]}, {"Set-Cookie": auth.make_cookie(result["session"])})
+            except auth.AuthError as exc:
+                json_response(self, 401, {"status": "error", "service": SERVICE_NAME, "error": "auth_failed", "message": str(exc)})
+            except Exception as exc:
+                json_response(self, 500, {"status": "error", "service": SERVICE_NAME, "error": type(exc).__name__, "message": str(exc)})
+            return
+
+        if self.path in ("/auth/logout", "/api/auth/logout"):
+            auth.logout(self.headers.get("Cookie"))
+            json_response(self, 200, {"status": "ok", "service": SERVICE_NAME, "message": "Sessão encerrada"}, {"Set-Cookie": auth.clear_cookie()})
+            return
+
+        routes: dict[str, tuple[str, Callable[[NFeOffline, dict[str, Any]], dict[str, Any]]]] = {
+            "/nfe/carregar-ini": ("nfe.carregar_ini", lambda svc, body: svc.executar_carregar_ini(body)),
+            "/api/nfe/carregar-ini": ("nfe.carregar_ini", lambda svc, body: svc.executar_carregar_ini(body)),
+            "/nfe/assinar": ("nfe.assinar", lambda svc, body: svc.executar_assinar(body)),
+            "/api/nfe/assinar": ("nfe.assinar", lambda svc, body: svc.executar_assinar(body)),
+            "/nfe/validar-regras": ("nfe.validar_regras", lambda svc, body: svc.executar_validar_regras(body)),
+            "/api/nfe/validar-regras": ("nfe.validar_regras", lambda svc, body: svc.executar_validar_regras(body)),
+            "/nfe/status-servico": ("nfe.status_servico", lambda svc, body: svc.executar_status_servico(body)),
+            "/api/nfe/status-servico": ("nfe.status_servico", lambda svc, body: svc.executar_status_servico(body)),
+        }
 
         if self.path in ("/nfe/gerar-chave", "/api/nfe/gerar-chave"):
             status, response_payload = post_gerar_chave(payload)
@@ -217,6 +197,7 @@ class NfeWebHandler(BaseHTTPRequestHandler):
 
 
 def main() -> int:
+    auth.setup_auth()
     host = env("HOST", "127.0.0.1")
     port = int(env("PORT", "3333"))
     httpd = ThreadingHTTPServer((host, port), NfeWebHandler)
